@@ -1,5 +1,5 @@
 # app.py
-# Streamlit Version 7.0: Color-coded Altair charts + Cannabis preserved
+# Streamlit Version 8.0: Analytics reacts to sidebar filters
 # Run: streamlit run app.py
 
 import os
@@ -32,6 +32,16 @@ div[data-testid="stDataFrame"] {
 </style>
 """
 st.markdown(DARK_CSS, unsafe_allow_html=True)
+
+# Sidebar full-width button rule (kept separate so DARK_CSS stays exactly as-is)
+SIDEBAR_BUTTONS_CSS = """
+<style>
+section[data-testid="stSidebar"] .stButton button { width: 100%; }
+section[data-testid="stSidebar"] .stDownloadButton button { width: 100%; }
+section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label { width: 100%; }
+</style>
+"""
+st.markdown(SIDEBAR_BUTTONS_CSS, unsafe_allow_html=True)
 
 
 # ----------------------------
@@ -133,6 +143,7 @@ def make_fallback_dataset() -> pd.DataFrame:
             "Next_Steps": "Pause and review readiness before next session.",
         },
     ]
+
     df = pd.DataFrame(rows)
     for col in REQUIRED_COLS:
         if col not in df.columns:
@@ -148,10 +159,12 @@ def load_data(csv_path: str) -> pd.DataFrame:
     except Exception:
         df = make_fallback_dataset()
 
+    # Ensure required columns exist
     for col in REQUIRED_COLS:
         if col not in df.columns:
             df[col] = ""
 
+    # Normalize types
     df["Patient_Age"] = pd.to_numeric(df["Patient_Age"], errors="coerce").fillna(0).astype(int)
     df["Dosage_Mg"] = pd.to_numeric(df["Dosage_Mg"], errors="coerce").fillna(0).astype(int)
     df["Treatment_Outcome_Rating"] = pd.to_numeric(
@@ -160,7 +173,14 @@ def load_data(csv_path: str) -> pd.DataFrame:
 
     df["Treatment_Date"] = pd.to_datetime(df["Treatment_Date"], errors="coerce")
 
-    for c in ["Practitioner_Name", "Client_ID", "Patient_Sex", "Focus_Area", "Chemical_Used", "Intake_Form"]:
+    for c in [
+        "Practitioner_Name",
+        "Client_ID",
+        "Patient_Sex",
+        "Focus_Area",
+        "Chemical_Used",
+        "Intake_Form",
+    ]:
         df[c] = df[c].astype(str).str.strip()
 
     return df[REQUIRED_COLS].copy()
@@ -212,32 +232,32 @@ def require_login():
         st.stop()
 
 
-def search_filter(df: pd.DataFrame, query: str) -> pd.DataFrame:
+def search_filter(df_in: pd.DataFrame, query: str) -> pd.DataFrame:
     """Text search across all columns."""
     q = (query or "").strip()
     if not q:
-        return df.copy()
+        return df_in.copy()
 
     q_lower = q.lower()
-    combined = df.astype(str).apply(lambda row: " | ".join(row.values), axis=1).str.lower()
-    return df.loc[combined.str.contains(q_lower, na=False)].copy()
+    combined = df_in.astype(str).apply(lambda row: " | ".join(row.values), axis=1).str.lower()
+    return df_in.loc[combined.str.contains(q_lower, na=False)].copy()
 
 
-def apply_sidebar_filters(df: pd.DataFrame, focus_list, chemical_list, min_rating: int) -> pd.DataFrame:
+def apply_sidebar_filters(df_in: pd.DataFrame, focus_list, chemical_list, min_rating: int) -> pd.DataFrame:
     """Apply the sidebar filters."""
-    out = df.copy()
+    out = df_in.copy()
     if focus_list is not None:
-        out = out[out["Focus_Area"].isin(focus_list)]
+        out = out[out["Focus_Area"].isin(list(focus_list))]
     if chemical_list is not None:
-        out = out[out["Chemical_Used"].isin(chemical_list)]
+        out = out[out["Chemical_Used"].isin(list(chemical_list))]
     out = out[out["Treatment_Outcome_Rating"] >= int(min_rating)]
     return out.copy()
 
 
-def format_for_display(df: pd.DataFrame) -> pd.DataFrame:
+def format_for_display(df_in: pd.DataFrame) -> pd.DataFrame:
     """Keep all columns, format date for readability."""
-    out = df.copy()
-    if pd.api.types.is_datetime64_any_dtype(out["Treatment_Date"]):
+    out = df_in.copy()
+    if "Treatment_Date" in out.columns and pd.api.types.is_datetime64_any_dtype(out["Treatment_Date"]):
         out["Treatment_Date"] = out["Treatment_Date"].dt.strftime("%Y-%m-%d")
     return out
 
@@ -249,13 +269,13 @@ def safe_str(value) -> str:
     return "" if s.lower() == "nan" else s
 
 
-def pick_best_row_for_client(df_filtered: pd.DataFrame, client_id: str) -> pd.Series:
+def pick_best_row_for_client(df_in: pd.DataFrame, client_id: str) -> pd.Series:
     """If Client_ID appears multiple times, show the most recent one."""
-    subset = df_filtered[df_filtered["Client_ID"].astype(str) == str(client_id)].copy()
+    subset = df_in[df_in["Client_ID"].astype(str) == str(client_id)].copy()
     if subset.empty:
         return pd.Series(dtype="object")
 
-    if pd.api.types.is_datetime64_any_dtype(subset["Treatment_Date"]):
+    if "Treatment_Date" in subset.columns and pd.api.types.is_datetime64_any_dtype(subset["Treatment_Date"]):
         subset = subset.sort_values("Treatment_Date", ascending=False, na_position="last")
 
     return subset.iloc[0]
@@ -274,6 +294,7 @@ def df_to_csv_bytes(df_in: pd.DataFrame) -> bytes:
 # ----------------------------
 def enable_altair_dark_theme():
     theme_name = "ppn_dark_theme_v7"
+
     if st.session_state.get("alt_theme_enabled", False):
         try:
             alt.themes.enable(theme_name)
@@ -337,16 +358,12 @@ def build_avg_outcome_by_chemical_chart(df_in: pd.DataFrame) -> alt.Chart:
         )
         .properties(height=300)
     )
+
     return chart
 
 
 def build_treatments_by_focus_area_chart(df_in: pd.DataFrame) -> alt.Chart:
-    tmp = (
-        df_in["Focus_Area"]
-        .astype(str)
-        .value_counts()
-        .reset_index()
-    )
+    tmp = df_in["Focus_Area"].astype(str).value_counts().reset_index()
     tmp.columns = ["Focus_Area", "Total_Treatments"]
     tmp["Focus_Area"] = tmp["Focus_Area"].astype(str)
     tmp["Total_Treatments"] = tmp["Total_Treatments"].astype(int)
@@ -369,6 +386,7 @@ def build_treatments_by_focus_area_chart(df_in: pd.DataFrame) -> alt.Chart:
         )
         .properties(height=300)
     )
+
     return chart
 
 
@@ -377,7 +395,9 @@ def build_treatments_by_focus_area_chart(df_in: pd.DataFrame) -> alt.Chart:
 # ----------------------------
 st.title("Psychedelic Practitioners Network")
 st.subheader("Clinical Wisdom Trust & Research Database")
-st.caption("Prototype tool for clinicians to search, compare, and record treatment notes. Uses synthetic data only.")
+st.caption(
+    "Prototype tool for clinicians to search, compare, and record treatment notes. Uses synthetic data only."
+)
 
 
 # ----------------------------
@@ -474,13 +494,14 @@ if page == "Login":
 
 
 # ----------------------------
-# Page 2: Search Database (color-coded charts)
+# Page 2: Search Database
 # ----------------------------
 elif page == "Search Database":
     require_login()
     st.subheader("Search Database")
 
     st.write("Type a word like PTSD, Ketamine, MDMA, Cannabis, a client ID, or a practitioner name.")
+
     query = st.text_input(
         "Search",
         value="",
@@ -489,9 +510,11 @@ elif page == "Search Database":
         key="main_search",
     )
 
+    # IMPORTANT: The entire page (metrics + charts + table + drill-down) must use this filtered_df.
     filtered_df = search_filter(df, query)
     filtered_df = apply_sidebar_filters(filtered_df, focus_selected, chemical_selected, min_success_rating)
 
+    # Metrics MUST use filtered_df
     total_found = int(len(filtered_df))
     avg_rating = float(filtered_df["Treatment_Outcome_Rating"].mean()) if total_found > 0 else 0.0
 
@@ -514,11 +537,13 @@ elif page == "Search Database":
     st.subheader("Analytics")
     left, right = st.columns(2)
 
+    # Charts MUST use filtered_df
     with left:
         st.altair_chart(
             build_avg_outcome_by_chemical_chart(filtered_df),
             use_container_width=True,
         )
+
     with right:
         st.altair_chart(
             build_treatments_by_focus_area_chart(filtered_df),
@@ -593,7 +618,7 @@ elif page == "Search Database":
 
 
 # ----------------------------
-# Page 3: Add New Record (Cannabis preserved)
+# Page 3: Add New Record
 # ----------------------------
 elif page == "Add New Record":
     require_login()
