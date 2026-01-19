@@ -511,7 +511,7 @@ elif page == "Search Database":
 
     enable_altair_dark_theme()
 
-    st.subheader("AI Analytics")
+    st.subheader("Analytics")
     left, right = st.columns(2)
 
     with left:
