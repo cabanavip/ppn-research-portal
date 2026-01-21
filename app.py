@@ -1,778 +1,445 @@
-# app.py
-# Streamlit Version 8.0: Analytics reacts to sidebar filters
-# Run: streamlit run app.py
-
-import os
-from datetime import date, timedelta
-
-import altair as alt
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import altair as alt
+import random
+import os
+from datetime import date
 
-
-# ----------------------------
-# Page config + basic styling
-# ----------------------------
+# -----------------------------------------------------------------------------
+# 1. APP CONFIGURATION & STYLING
+# -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="PPN Research Portal",
-    page_icon="📊",
-    layout="wide",
+    page_icon="🧠",
+    layout="wide"
 )
 
-DARK_CSS = """
+# CSS: Google Fonts (Remote) + Stitch Design
+st.markdown("""
 <style>
-.stApp { background-color: #0e1117; color: #e6e6e6; }
-section[data-testid="stSidebar"] { background-color: #111827; }
-div[data-testid="stMetric"] {
-  background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 10px;
-}
-div[data-testid="stDataFrame"] {
-  border: 1px solid #1f2937; border-radius: 10px; overflow: hidden;
-}
+    /* 1. Import Inter Font from Google */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+
+    /* 2. FORCE FONT GLOBALLY */
+    html, body, [class*="css"], [class*="st-"], button, input, textarea {
+        font-family: 'Inter', sans-serif !important;
+    }
+
+    /* 3. Global Typography Size */
+    html, body {
+        font-size: 18px !important;
+        color: #f3f4f6;
+        background-color: #0e1117;
+    }
+    
+    /* Global Background */
+    .stApp { background-color: #0e1117; }
+    
+    /* Headers Scaling */
+    h1 { font-size: 3rem !important; font-weight: 800; color: #f9fafb !important; letter-spacing: -0.02em; }
+    h2 { font-size: 2.2rem !important; font-weight: 700; color: #f9fafb !important; letter-spacing: -0.01em; }
+    h3 { font-size: 1.75rem !important; font-weight: 600; color: #f9fafb !important; }
+    
+    /* SIDEBAR STYLING */
+    section[data-testid="stSidebar"] { 
+        background-color: #111827; 
+        border-right: 1px solid #1f2937;
+    }
+    
+    /* SIDEBAR BUTTONS */
+    div[data-testid="stSidebar"] .stButton button {
+        width: 100%;
+        text-align: left;
+        background-color: transparent;
+        border: 1px solid transparent;
+        color: #9ca3af;
+        margin-bottom: 6px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        transition: all 0.2s ease-in-out;
+        font-weight: 500;
+        font-size: 16px !important;
+        font-family: 'Inter', sans-serif !important;
+    }
+    div[data-testid="stSidebar"] .stButton button:hover {
+        background-color: #1f2937;
+        border-color: #374151;
+        color: #60a5fa;
+        transform: translateX(4px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    div[data-testid="stSidebar"] .stButton button:focus {
+        background-color: #1f2937;
+        color: #60a5fa;
+        border-color: #60a5fa;
+    }
+
+    /* CARDS & CONTAINERS */
+    .stitch-card {
+        background-color: #1f2937;
+        padding: 28px;
+        border-radius: 12px;
+        border: 1px solid #374151;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        margin-bottom: 24px;
+    }
+    
+    /* PRICING CARDS */
+    .pricing-card {
+        background-color: #1f2937;
+        padding: 40px;
+        border-radius: 16px;
+        border: 1px solid #374151;
+        text-align: center;
+        height: 100%;
+        transition: transform 0.2s;
+    }
+    .pricing-card:hover {
+        transform: translateY(-5px);
+        border-color: #60a5fa;
+    }
+    .price-tag {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #f3f4f6;
+        margin: 20px 0;
+        font-family: 'Inter', sans-serif !important;
+    }
+    .feature-list {
+        text-align: left;
+        margin: 30px 0;
+        line-height: 2;
+        color: #9ca3af;
+        font-size: 16px;
+    }
+    
+    /* Mission Hero */
+    .mission-hero {
+        font-size: 1.8rem;
+        line-height: 1.5;
+        font-style: italic;
+        text-align: center;
+        color: #e5e7eb;
+        padding: 60px 40px;
+        margin: 40px 0;
+        border-left: 6px solid #f59e0b;
+        background: linear-gradient(90deg, #1f2937 0%, #111827 100%);
+        border-radius: 8px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        font-family: 'Inter', sans-serif !important;
+    }
+
+    /* Medical Card */
+    .med-card {
+        background-color: #1f2937;
+        padding: 24px;
+        border-radius: 12px;
+        border-left: 5px solid #3b82f6;
+        border-top: 1px solid #374151;
+        border-right: 1px solid #374151;
+        border-bottom: 1px solid #374151;
+        margin-top: 15px;
+    }
+
+    /* Hide Default Nav */
+    [data-testid="stSidebarNav"] {display: none;}
 </style>
-"""
-st.markdown(DARK_CSS, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# Sidebar full-width button rule (kept separate so DARK_CSS stays exactly as-is)
-SIDEBAR_BUTTONS_CSS = """
-<style>
-section[data-testid="stSidebar"] .stButton button { width: 100%; }
-section[data-testid="stSidebar"] .stDownloadButton button { width: 100%; }
-section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label { width: 100%; }
-</style>
-"""
-st.markdown(SIDEBAR_BUTTONS_CSS, unsafe_allow_html=True)
+# -----------------------------------------------------------------------------
+# 2. SESSION STATE
+# -----------------------------------------------------------------------------
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'page' not in st.session_state:
+    st.session_state.page = 'Dashboard'
+if 'search_query' not in st.session_state:
+    st.session_state.search_query = ""
+if 'data_scope' not in st.session_state:
+    st.session_state.data_scope = "Global Network"
 
-
-# ----------------------------
-# Constants
-# ----------------------------
+# -----------------------------------------------------------------------------
+# 3. DATA & CONSTANTS
+# -----------------------------------------------------------------------------
 CSV_PATH = "seed_data.csv"
-LOGO_PATH = "logo.png"
-
+REQUIRED_COLS = [
+    "Practitioner_Name", "Client_ID", "Treatment_Date", "Patient_Age", "Patient_Sex",
+    "Focus_Area", "Chemical_Used", "Dosage_Mg", "Intake_Form", "Protocol_Description",
+    "Treatment_Outcome_Rating", "Detailed_Results", "Next_Steps"
+]
 FOCUS_AREAS = ["PTSD", "Addiction", "General Personal Health", "Spirituality"]
-
-# Cannabis is included (filters + Add Record dropdown)
 CHEMICALS = ["Psilocybin", "Ketamine", "MDMA", "DMT", "LSD", "Cannabis", "Other"]
-
 INTAKE_FORMS = ["Inhaled", "Eaten", "Drank", "Injected", "Topical", "Other"]
 SEX_OPTIONS = ["M", "F", "Non-Binary"]
 
-REQUIRED_COLS = [
-    "Practitioner_Name",
-    "Client_ID",
-    "Treatment_Date",
-    "Patient_Age",
-    "Patient_Sex",
-    "Focus_Area",
-    "Chemical_Used",
-    "Dosage_Mg",
-    "Intake_Form",
-    "Protocol_Description",
-    "Treatment_Outcome_Rating",
-    "Detailed_Results",
-    "Next_Steps",
-]
-
-
-# ----------------------------
-# Data helpers
-# ----------------------------
-def make_fallback_dataset() -> pd.DataFrame:
-    """Small synthetic dataset so the app still runs if the CSV is missing."""
-    today = date.today()
-    rows = [
-        {
-            "Practitioner_Name": "Dr. A. Smith",
-            "Client_ID": "P-1024",
-            "Treatment_Date": str(today - timedelta(days=30)),
-            "Patient_Age": 34,
-            "Patient_Sex": "F",
-            "Focus_Area": "PTSD",
-            "Chemical_Used": "Ketamine",
-            "Dosage_Mg": 85,
-            "Intake_Form": "Injected",
-            "Protocol_Description": "Used a monitored ketamine session with guided imagery and integration.",
-            "Treatment_Outcome_Rating": 4,
-            "Detailed_Results": "Patient reported fewer intrusive thoughts and improved sleep over the next week.",
-            "Next_Steps": "Follow up in 2 weeks.",
-        },
-        {
-            "Practitioner_Name": "Clinician B. Jones",
-            "Client_ID": "P-3921",
-            "Treatment_Date": str(today - timedelta(days=90)),
-            "Patient_Age": 52,
-            "Patient_Sex": "M",
-            "Focus_Area": "Addiction",
-            "Chemical_Used": "Psilocybin",
-            "Dosage_Mg": 25,
-            "Intake_Form": "Eaten",
-            "Protocol_Description": "Used a supervised session with a structured preparation and integration plan.",
-            "Treatment_Outcome_Rating": 5,
-            "Detailed_Results": "Patient reported lower cravings and stronger commitment to a relapse prevention plan.",
-            "Next_Steps": "Integration therapy scheduled.",
-        },
-        {
-            "Practitioner_Name": "Dr. L. Patel",
-            "Client_ID": "P-7712",
-            "Treatment_Date": str(today - timedelta(days=14)),
-            "Patient_Age": 41,
-            "Patient_Sex": "Non-Binary",
-            "Focus_Area": "General Personal Health",
-            "Chemical_Used": "Other",
-            "Dosage_Mg": 40,
-            "Intake_Form": "Topical",
-            "Protocol_Description": "Used a structured session with symptom tracking and follow up coaching.",
-            "Treatment_Outcome_Rating": 3,
-            "Detailed_Results": "Patient reported some stress reduction but had trouble focusing during the session.",
-            "Next_Steps": "Reassess in 3 weeks.",
-        },
-        {
-            "Practitioner_Name": "Clinician D. Allen",
-            "Client_ID": "P-6603",
-            "Treatment_Date": str(today - timedelta(days=7)),
-            "Patient_Age": 29,
-            "Patient_Sex": "F",
-            "Focus_Area": "Spirituality",
-            "Chemical_Used": "DMT",
-            "Dosage_Mg": 18,
-            "Intake_Form": "Inhaled",
-            "Protocol_Description": "Used a brief inhalation session with grounding and a short integration debrief.",
-            "Treatment_Outcome_Rating": 2,
-            "Detailed_Results": "Patient reported anxiety during the peak and needed extra grounding afterward.",
-            "Next_Steps": "Pause and review readiness before next session.",
-        },
-    ]
-
-    df = pd.DataFrame(rows)
-    for col in REQUIRED_COLS:
-        if col not in df.columns:
-            df[col] = ""
-    return df[REQUIRED_COLS].copy()
-
-
-@st.cache_data(show_spinner=False)
-def load_data(csv_path: str) -> pd.DataFrame:
-    """Load CSV to DataFrame, or use fallback dataset if missing/unreadable."""
-    try:
-        df = pd.read_csv(csv_path)
-    except Exception:
-        df = make_fallback_dataset()
-
-    # Ensure required columns exist
-    for col in REQUIRED_COLS:
-        if col not in df.columns:
-            df[col] = ""
-
-    # Normalize types
-    df["Patient_Age"] = pd.to_numeric(df["Patient_Age"], errors="coerce").fillna(0).astype(int)
-    df["Dosage_Mg"] = pd.to_numeric(df["Dosage_Mg"], errors="coerce").fillna(0).astype(int)
-    df["Treatment_Outcome_Rating"] = pd.to_numeric(
-        df["Treatment_Outcome_Rating"], errors="coerce"
-    ).fillna(0).astype(int)
-
-    df["Treatment_Date"] = pd.to_datetime(df["Treatment_Date"], errors="coerce")
-
-    for c in [
-        "Practitioner_Name",
-        "Client_ID",
-        "Patient_Sex",
-        "Focus_Area",
-        "Chemical_Used",
-        "Intake_Form",
-    ]:
-        df[c] = df[c].astype(str).str.strip()
-
-    return df[REQUIRED_COLS].copy()
-
-
-def clear_data_cache():
-    try:
-        load_data.clear()
-    except Exception:
-        try:
-            st.cache_data.clear()
-        except Exception:
-            pass
-
-
-def append_record_to_csv(csv_path: str, record: dict) -> None:
-    """
-    Append one row to the CSV using mode='a' so old data is preserved.
-    Raises PermissionError if the file is open/locked (common on Windows with Excel).
-    """
-    abs_path = os.path.abspath(csv_path)
-    folder = os.path.dirname(abs_path)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-
-    needs_header = (not os.path.exists(abs_path)) or (os.path.getsize(abs_path) == 0)
-    row_df = pd.DataFrame([record], columns=REQUIRED_COLS)
-
-    row_df.to_csv(
-        abs_path,
-        mode="a",
-        header=needs_header,
-        index=False,
-        encoding="utf-8",
-        lineterminator="\n",
-    )
-
-
-# ----------------------------
-# Search + filter helpers
-# ----------------------------
-def is_logged_in() -> bool:
-    return bool(st.session_state.get("logged_in", False))
-
-
-def require_login():
-    if not is_logged_in():
-        st.warning("Please log in first.")
-        st.stop()
-
-
-def search_filter(df_in: pd.DataFrame, query: str) -> pd.DataFrame:
-    """Text search across all columns."""
-    q = (query or "").strip()
-    if not q:
-        return df_in.copy()
-
-    q_lower = q.lower()
-    combined = df_in.astype(str).apply(lambda row: " | ".join(row.values), axis=1).str.lower()
-    return df_in.loc[combined.str.contains(q_lower, na=False)].copy()
-
-
-def apply_sidebar_filters(df_in: pd.DataFrame, focus_list, chemical_list, min_rating: int) -> pd.DataFrame:
-    """Apply the sidebar filters."""
-    out = df_in.copy()
-    if focus_list is not None:
-        out = out[out["Focus_Area"].isin(list(focus_list))]
-    if chemical_list is not None:
-        out = out[out["Chemical_Used"].isin(list(chemical_list))]
-    out = out[out["Treatment_Outcome_Rating"] >= int(min_rating)]
-    return out.copy()
-
-
-def format_for_display(df_in: pd.DataFrame) -> pd.DataFrame:
-    """Keep all columns, format date for readability."""
-    out = df_in.copy()
-    if "Treatment_Date" in out.columns and pd.api.types.is_datetime64_any_dtype(out["Treatment_Date"]):
-        out["Treatment_Date"] = out["Treatment_Date"].dt.strftime("%Y-%m-%d")
-    return out
-
-
-def safe_str(value) -> str:
-    if value is None:
-        return ""
-    s = str(value)
-    return "" if s.lower() == "nan" else s
-
-
-def pick_best_row_for_client(df_in: pd.DataFrame, client_id: str) -> pd.Series:
-    """If Client_ID appears multiple times, show the most recent one."""
-    subset = df_in[df_in["Client_ID"].astype(str) == str(client_id)].copy()
-    if subset.empty:
-        return pd.Series(dtype="object")
-
-    if "Treatment_Date" in subset.columns and pd.api.types.is_datetime64_any_dtype(subset["Treatment_Date"]):
-        subset = subset.sort_values("Treatment_Date", ascending=False, na_position="last")
-
-    return subset.iloc[0]
-
-
-def df_to_csv_bytes(df_in: pd.DataFrame) -> bytes:
-    """Convert a DataFrame to CSV bytes for download."""
-    df_out = df_in.copy()
-    if "Treatment_Date" in df_out.columns and pd.api.types.is_datetime64_any_dtype(df_out["Treatment_Date"]):
-        df_out["Treatment_Date"] = df_out["Treatment_Date"].dt.strftime("%Y-%m-%d")
-    return df_out.to_csv(index=False).encode("utf-8")
-
-
-# ----------------------------
-# Altair theme (dark-friendly) + chart builders
-# ----------------------------
-def enable_altair_dark_theme():
-    theme_name = "ppn_dark_theme_v7"
-
-    if st.session_state.get("alt_theme_enabled", False):
-        try:
-            alt.themes.enable(theme_name)
-        except Exception:
-            pass
-        return
-
-    theme_config = {
-        "config": {
-            "background": "transparent",
-            "title": {"color": "#e6e6e6", "fontSize": 14},
-            "axis": {
-                "labelColor": "#e6e6e6",
-                "titleColor": "#e6e6e6",
-                "gridColor": "#1f2937",
-                "domainColor": "#1f2937",
-                "tickColor": "#1f2937",
-            },
-            "legend": {"labelColor": "#e6e6e6", "titleColor": "#e6e6e6"},
-            "view": {"stroke": "#1f2937"},
-        }
+def get_practitioner_details(name):
+    random.seed(name)
+    locs = ["Portland, OR", "Denver, CO", "Oakland, CA", "Ann Arbor, MI", "Austin, TX"]
+    specs = ["Integration Specialist", "Somatic Therapy", "Trauma Informed Care"]
+    return {
+        "Name": name,
+        "Location": random.choice(locs),
+        "Specialty": random.choice(specs),
+        "Email": f"dr.{name.split()[-1].lower()}@ppn.network"
     }
 
+# -----------------------------------------------------------------------------
+# 4. DATA LOGIC
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_data():
     try:
-        alt.themes.register(theme_name, lambda: theme_config)
-    except Exception:
-        pass
+        df = pd.read_csv(CSV_PATH)
+        for c in REQUIRED_COLS:
+            if c not in df.columns: df[c] = ""
+        df["Treatment_Outcome_Rating"] = pd.to_numeric(df["Treatment_Outcome_Rating"], errors='coerce').fillna(0)
+        return df
+    except:
+        return pd.DataFrame(columns=REQUIRED_COLS)
 
+def append_record_to_csv(record):
+    df = pd.DataFrame([record])
+    hdr = not os.path.exists(CSV_PATH)
     try:
-        alt.themes.enable(theme_name)
-    except Exception:
-        pass
+        df.to_csv(CSV_PATH, mode='a', header=hdr, index=False)
+        load_data.clear()
+        return True
+    except Exception as e:
+        st.error(f"Save Error: {e}")
+        return False
 
-    st.session_state["alt_theme_enabled"] = True
-
-
-def build_avg_outcome_by_chemical_chart(df_in: pd.DataFrame) -> alt.Chart:
-    tmp = (
-        df_in.groupby("Chemical_Used", dropna=False)["Treatment_Outcome_Rating"]
-        .mean()
-        .reset_index()
+def parse_smart_query(query, dataframe):
+    if not query: return dataframe
+    q_str = query.lower().strip()
+    mask = (
+        dataframe['Chemical_Used'].str.lower().str.contains(q_str, na=False) |
+        dataframe['Focus_Area'].str.lower().str.contains(q_str, na=False) |
+        dataframe['Practitioner_Name'].str.lower().str.contains(q_str, na=False) |
+        dataframe['Client_ID'].str.lower().str.contains(q_str, na=False)
     )
-    tmp["Chemical_Used"] = tmp["Chemical_Used"].astype(str)
-    tmp["Treatment_Outcome_Rating"] = tmp["Treatment_Outcome_Rating"].astype(float)
+    return dataframe[mask]
 
-    chart = (
-        alt.Chart(tmp, title="Avg Outcome by Chemical")
-        .mark_bar()
-        .encode(
-            y=alt.Y("Chemical_Used:N", sort="-x", title=None),
-            x=alt.X("Treatment_Outcome_Rating:Q", title="Average Outcome Rating"),
-            color=alt.Color(
-                "Chemical_Used:N",
-                title="Chemical",
-                scale=alt.Scale(scheme="tableau20"),
-            ),
-            tooltip=[
-                alt.Tooltip("Chemical_Used:N", title="Chemical"),
-                alt.Tooltip("Treatment_Outcome_Rating:Q", title="Avg Outcome", format=".2f"),
-            ],
-        )
-        .properties(height=300)
-    )
+df = load_data()
 
-    return chart
-
-
-def build_treatments_by_focus_area_chart(df_in: pd.DataFrame) -> alt.Chart:
-    tmp = df_in["Focus_Area"].astype(str).value_counts().reset_index()
-    tmp.columns = ["Focus_Area", "Total_Treatments"]
-    tmp["Focus_Area"] = tmp["Focus_Area"].astype(str)
-    tmp["Total_Treatments"] = tmp["Total_Treatments"].astype(int)
-
-    chart = (
-        alt.Chart(tmp, title="Treatments by Focus Area")
-        .mark_bar()
-        .encode(
-            y=alt.Y("Focus_Area:N", sort="-x", title=None),
-            x=alt.X("Total_Treatments:Q", title="Total Treatments"),
-            color=alt.Color(
-                "Focus_Area:N",
-                title="Focus Area",
-                scale=alt.Scale(scheme="set2"),
-            ),
-            tooltip=[
-                alt.Tooltip("Focus_Area:N", title="Focus Area"),
-                alt.Tooltip("Total_Treatments:Q", title="Treatments"),
-            ],
-        )
-        .properties(height=300)
-    )
-
-    return chart
-
-
-# ----------------------------
-# Branding header
-# ----------------------------
-st.title("Psychedelic Practitioners Network")
-st.subheader("Clinical Wisdom Trust & Research Database")
-st.caption(
-    "Prototype tool for clinicians to search, compare, and record treatment notes. Uses synthetic data only."
-)
-
-
-# ----------------------------
-# Sidebar: Logo + Navigation + Filters
-# ----------------------------
+# -----------------------------------------------------------------------------
+# 5. SIDEBAR LOGIC
+# -----------------------------------------------------------------------------
 with st.sidebar:
-    st.image(LOGO_PATH, use_container_width=True)
-
-    st.header("Navigation")
-    page = st.radio(
-        "Go to",
-        ["Login", "Search Database", "Add New Record"],
-        index=0,
-        label_visibility="collapsed",
-    )
-
-    st.divider()
-
-    if is_logged_in():
-        st.success("Logged in")
-        if st.button("Log out"):
-            st.session_state["logged_in"] = False
-            st.rerun()
+    if os.path.exists("logo.png"):
+        st.image("logo.png", use_container_width=True)
     else:
-        st.info("Not logged in")
+        st.markdown("## PPN")
 
-    focus_selected = None
-    chemical_selected = None
-    min_success_rating = 1
+    # --- STATE A: LOGGED OUT ---
+    if not st.session_state.logged_in:
+        st.markdown("### Practitioner Login")
+        with st.form("sidebar_login"):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            btn = st.form_submit_button("Secure Login", type="primary", use_container_width=True)
+            
+            if btn:
+                if u == "admin" and p == "password":
+                    st.session_state.logged_in = True
+                    st.session_state.page = 'Dashboard'
+                    st.rerun()
+                else:
+                    st.error("Invalid Credentials")
 
-    if page == "Search Database":
-        st.divider()
-        st.subheader("Filter by Category")
+    # --- STATE B: LOGGED IN ---
+    else:
+        def nav_to(page):
+            st.session_state.page = page
+            st.rerun()
 
-        focus_selected = st.multiselect(
-            "Focus Area",
-            options=FOCUS_AREAS,
-            default=FOCUS_AREAS,
-            help="Pick one or more focus areas. Leave all selected to show everything.",
-            key="filter_focus",
-        )
-
-        chemical_selected = st.multiselect(
-            "Chemical",
-            options=CHEMICALS,
-            default=CHEMICALS,
-            help="Pick one or more chemicals. Leave all selected to show everything.",
-            key="filter_chemical",
-        )
-
-        min_success_rating = st.slider(
-            "Minimum Rating",
-            min_value=1,
-            max_value=5,
-            value=1,
-            help="If you set this to 4, you will only see records rated 4 or 5.",
-            key="filter_min_rating",
-        )
-
-
-# ----------------------------
-# Load data
-# ----------------------------
-df = load_data(CSV_PATH)
-
-if not os.path.exists(CSV_PATH):
-    st.warning(
-        "I could not find 'seed_data.csv' in this folder. The app is using a small built-in sample dataset. "
-        "If you add a record, the app will create 'seed_data.csv' and save it."
-    )
+        st.caption("MENU")
+        if st.button("📊  Dashboard"): nav_to('Dashboard')
+        if st.button("➕  Add New Record"): nav_to('Add Record')
+        if st.button("💎  Membership"): nav_to('Membership')
+        
+        st.markdown("---")
+        if st.button("Log Out"):
+            st.session_state.logged_in = False
+            st.rerun()
 
 
-# ----------------------------
-# Page 1: Login
-# ----------------------------
-if page == "Login":
-    st.subheader("Login")
+# -----------------------------------------------------------------------------
+# 6. MAIN CONTENT AREA LOGIC
+# -----------------------------------------------------------------------------
 
-    with st.form("login_form", clear_on_submit=False):
-        username = st.text_input("Username", value="", help="Prototype login only.")
-        password = st.text_input("Password", value="", type="password", help="Prototype login only.")
-        submitted = st.form_submit_button("Log in")
-
-    if submitted:
-        if username == "admin" and password == "password":
-            st.session_state["logged_in"] = True
-            st.success("Login successful. You can now use the database.")
-        else:
-            st.session_state["logged_in"] = False
-            st.error("Login failed. Please check your username and password.")
-
-    st.divider()
-    st.write("Tip: For this prototype, use Username = admin and Password = password.")
-
-
-# ----------------------------
-# Page 2: Search Database
-# ----------------------------
-elif page == "Search Database":
-    require_login()
-    st.subheader("Search Database")
-
-    st.write("Type a word like PTSD, Ketamine, MDMA, Cannabis, a client ID, or a practitioner name.")
-
-    query = st.text_input(
-        "Search",
-        value="",
-        placeholder="Example: PTSD, Cannabis, P-1024, Dr. Smith",
-        help="This searches across all fields in the results.",
-        key="main_search",
-    )
-
-    # IMPORTANT: The entire page (metrics + charts + table + drill-down) must use this filtered_df.
-    filtered_df = search_filter(df, query)
-    filtered_df = apply_sidebar_filters(filtered_df, focus_selected, chemical_selected, min_success_rating)
-
-    # Metrics MUST use filtered_df
-    total_found = int(len(filtered_df))
-    avg_rating = float(filtered_df["Treatment_Outcome_Rating"].mean()) if total_found > 0 else 0.0
-
-    c1, c2, c3 = st.columns([1, 1, 2])
-    with c1:
-        st.metric("Total records found", f"{total_found}")
-    with c2:
-        st.metric("Average success rating", f"{avg_rating:.2f}" if total_found > 0 else "0.00")
-    with c3:
-        st.caption("Results reflect your text search and your sidebar filters.")
-
-    st.divider()
-
-    if total_found == 0:
-        st.warning("No records found matching your criteria.")
-        st.stop()
-
-    enable_altair_dark_theme()
-
-    st.subheader("Analytics")
-    left, right = st.columns(2)
-
-    # Charts MUST use filtered_df
-    with left:
-        st.altair_chart(
-            build_avg_outcome_by_chemical_chart(filtered_df),
-            use_container_width=True,
-        )
-
-    with right:
-        st.altair_chart(
-            build_treatments_by_focus_area_chart(filtered_df),
-            use_container_width=True,
-        )
-
-    st.download_button(
-        label="📥 Download Search Results as CSV",
-        data=df_to_csv_bytes(filtered_df),
-        file_name="ppn_search_results.csv",
-        mime="text/csv",
-        help="Downloads the exact results you are currently seeing (after search and filters).",
-    )
-
-    st.divider()
-
-    st.subheader("Results Table")
-    st.dataframe(
-        format_for_display(filtered_df),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.divider()
-    st.subheader("Patient Drill-Down")
-    st.write("Select a Client ID to view full details.")
-
-    client_ids = sorted(filtered_df["Client_ID"].astype(str).dropna().unique().tolist())
-    select_options = ["Select a Client ID to view full details."] + client_ids
-
-    chosen = st.selectbox(
-        "Client ID",
-        options=select_options,
-        index=0,
-        label_visibility="collapsed",
-        help="This list is based on your current search results.",
-        key="drilldown_client",
-    )
-
-    if chosen != select_options[0]:
-        row = pick_best_row_for_client(filtered_df, chosen)
-
-        header_cols = st.columns(4)
-        header_cols[0].metric("Client ID", safe_str(row.get("Client_ID")))
-        header_cols[1].metric("Age", safe_str(row.get("Patient_Age")))
-        header_cols[2].metric("Sex", safe_str(row.get("Patient_Sex")))
-        header_cols[3].metric("Focus Area", safe_str(row.get("Focus_Area")))
-
-        protocol_cols = st.columns(5)
-        protocol_cols[0].metric("Chemical", safe_str(row.get("Chemical_Used")))
-        protocol_cols[1].metric("Dosage (mg)", safe_str(row.get("Dosage_Mg")))
-        protocol_cols[2].metric("Intake Form", safe_str(row.get("Intake_Form")))
-        protocol_cols[3].metric("Outcome Rating", safe_str(row.get("Treatment_Outcome_Rating")))
-
-        tdate = row.get("Treatment_Date")
-        if pd.notna(tdate) and hasattr(tdate, "strftime"):
-            tdate_str = tdate.strftime("%Y-%m-%d")
-        else:
-            tdate_str = safe_str(tdate)
-        protocol_cols[4].metric("Treatment Date", tdate_str)
-
-        st.divider()
-        st.markdown("#### Protocol Description")
-        st.write(safe_str(row.get("Protocol_Description")))
-
-        st.markdown("#### Clinical Notes")
-        st.markdown("**Detailed Results**")
-        st.write(safe_str(row.get("Detailed_Results")))
-
-        st.markdown("**Next Steps**")
-        st.write(safe_str(row.get("Next_Steps")))
+# --- VIEW A: LOGGED OUT (Landing Page) ---
+if not st.session_state.logged_in:
+    
+    # Hero: Mission Statement
+    st.markdown("""
+    <div class="mission-hero">
+    "We are a community of nootropic practitioners devoted to improving the quality of each human life. 
+    We share a philosophy of optimizing what nature provides in a safe and life changing way. 
+    We openly share our professional expertise, practical experience, and protocols with each other. 
+    We are stronger together."
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Testimonials
+    t1, t2, t3 = st.columns(3)
+    with t1:
+        st.markdown('<div class="stitch-card"><h4>Dr. Sarah Jenkins</h4><p style="color:#9ca3af; font-style:italic">"The PPN database has completely transformed how I track patient outcomes. The peer data is invaluable."</p></div>', unsafe_allow_html=True)
+    with t2:
+        st.markdown('<div class="stitch-card"><h4>Marcus Thorne, PhD</h4><p style="color:#9ca3af; font-style:italic">"Finally, a secure place to share protocols without stigma. The community aspect is a game changer."</p></div>', unsafe_allow_html=True)
+    with t3:
+        st.markdown('<div class="stitch-card"><h4>Dr. Elena Rodriguez</h4><p style="color:#9ca3af; font-style:italic">"I use the trend analysis daily to benchmark patient outcomes against the network average."</p></div>', unsafe_allow_html=True)
 
 
-# ----------------------------
-# Page 3: Add New Record
-# ----------------------------
-elif page == "Add New Record":
-    require_login()
-    st.subheader("Add New Record")
-    st.write("This form permanently appends a new row into seed_data.csv on your computer.")
+# --- VIEW B: LOGGED IN (App Features) ---
+else:
+    
+    # Fix for Ghost State (Redirect if page no longer exists)
+    if st.session_state.page not in ['Dashboard', 'Add Record', 'Membership']:
+        st.session_state.page = 'Dashboard'
+        st.rerun()
 
-    with st.expander("Add New Record", expanded=True):
-        with st.form("add_record_form"):
-            top1, top2, top3 = st.columns(3)
-            with top1:
-                practitioner = st.text_input(
-                    "Practitioner Name",
-                    placeholder="Example: Dr. A. Smith",
-                    help="Use a consistent naming style so searches work well.",
-                )
-            with top2:
-                client_id = st.text_input(
-                    "Client ID",
-                    placeholder="Example: P-1234",
-                    help="Use an anonymous code. Do not use real names.",
-                )
-            with top3:
-                treatment_date = st.date_input(
-                    "Treatment Date",
-                    value=date.today(),
-                    help="When the treatment session took place.",
-                )
+    # PAGE: DASHBOARD (Default)
+    if st.session_state.page == 'Dashboard':
+        st.title("Clinical Research Dashboard")
+        
+        # 1. SCOPE TOGGLE
+        scope = st.radio("Data Scope", ["Global Network", "My Practice (Dr. A. Smith)"], horizontal=True)
+        st.markdown("---")
 
-            st.divider()
+        # 2. FILTER DATA
+        active_df = df.copy()
+        if "My Practice" in scope:
+            active_df = active_df[active_df['Practitioner_Name'] == "Dr. A. Smith"]
+            if active_df.empty:
+                st.warning("You have not contributed any records yet. Switch to Global Network to see peer data.")
 
-            r1c1, r1c2 = st.columns(2)
-            with r1c1:
-                age = st.number_input(
-                    "Patient Age",
-                    min_value=21,
-                    max_value=75,
-                    value=35,
-                    step=1,
-                    help="Whole number only.",
-                )
-            with r1c2:
-                sex = st.selectbox(
-                    "Sex",
-                    SEX_OPTIONS,
-                    help="Choose the option that best matches the record.",
-                )
-
-            r2c1, r2c2 = st.columns(2)
-            with r2c1:
-                focus_area = st.selectbox(
-                    "Focus Area",
-                    FOCUS_AREAS,
-                    help="Used for filtering and analytics charts.",
-                )
-            with r2c2:
-                chemical = st.selectbox(
-                    "Chemical Used",
-                    CHEMICALS,
-                    help="Used for filtering and analytics charts.",
-                )
-
-            r3c1, r3c2 = st.columns(2)
-            with r3c1:
-                dosage = st.number_input(
-                    "Dosage (mg)",
-                    min_value=0,
-                    max_value=2000,
-                    value=25,
-                    step=1,
-                    help="Whole number only. Use 0 if unknown.",
-                )
-            with r3c2:
-                intake_form = st.selectbox(
-                    "Intake Form",
-                    INTAKE_FORMS,
-                    help="How the chemical was taken.",
-                )
-
-            st.divider()
-
-            protocol = st.text_area(
-                "Protocol Description",
-                placeholder="Example: Preparation, session structure, monitoring, and integration approach.",
-                height=90,
-                help="Short description of the method used.",
-            )
-            detailed = st.text_area(
-                "Detailed Results",
-                placeholder="Example: Key clinical observations, patient-reported outcomes, adverse events.",
-                height=140,
-                help="Write full notes here so they read well in the drill-down view.",
-            )
-            next_steps = st.text_input(
-                "Next Steps",
-                placeholder="Example: Follow up in 2 weeks, integration therapy scheduled.",
-                help="Short plan for follow-up and integration.",
-            )
-            outcome = st.slider(
-                "Treatment Outcome Rating (1 to 5)",
-                min_value=1,
-                max_value=5,
-                value=4,
-                help="1 = No effect, 5 = Highly successful.",
-            )
-
-            submitted = st.form_submit_button("Submit")
-
-        if submitted:
-            if not practitioner.strip():
-                st.error("Please fill in Practitioner Name.")
-                st.stop()
-            if not client_id.strip():
-                st.error("Please fill in Client ID.")
-                st.stop()
-
-            record = {
-                "Practitioner_Name": practitioner.strip(),
-                "Client_ID": client_id.strip(),
-                "Treatment_Date": str(treatment_date),
-                "Patient_Age": int(age),
-                "Patient_Sex": sex,
-                "Focus_Area": focus_area,
-                "Chemical_Used": chemical,
-                "Dosage_Mg": int(dosage),
-                "Intake_Form": intake_form,
-                "Protocol_Description": (protocol or "").strip(),
-                "Treatment_Outcome_Rating": int(outcome),
-                "Detailed_Results": (detailed or "").strip(),
-                "Next_Steps": (next_steps or "").strip(),
-            }
-
-            try:
-                append_record_to_csv(CSV_PATH, record)
-                clear_data_cache()
-                st.success("✅ Record successfully added to the PPN Database!")
-                st.caption(f"Saved to: {os.path.abspath(CSV_PATH)}")
-
-                st.dataframe(
-                    pd.DataFrame([record], columns=REQUIRED_COLS),
-                    use_container_width=True,
-                    hide_index=True,
-                )
+        # 3. SEARCH BAR
+        c_search, c_act = st.columns([4, 1])
+        with c_search:
+            q = st.text_input("Search", placeholder="Search practitioners, chemicals, conditions...", value=st.session_state.search_query, label_visibility="collapsed")
+        with c_act:
+            if st.button("Run Query", type="primary", use_container_width=True):
+                st.session_state.search_query = q
                 st.rerun()
 
-            except PermissionError:
-                st.error("I could not save because the file looks busy or open.")
-                st.write("If seed_data.csv is open in another program (like Excel), close it and try again.")
-                st.caption(f"File path: {os.path.abspath(CSV_PATH)}")
+        # Advanced Search Placeholder REMOVED here
 
-            except OSError as e:
-                st.error("I could not save the record due to a file problem.")
-                st.write("Please make sure you can write to this folder, then try again.")
-                st.caption(f"Details: {e}")
+        filtered_df = parse_smart_query(st.session_state.search_query, active_df)
 
-            except Exception as e:
-                st.error("I could not save the record due to an unexpected error.")
-                st.caption(f"Details: {e}")
+        # 4. ANALYTICS
+        st.markdown("<br>", unsafe_allow_html=True)
+        if not filtered_df.empty:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Efficacy Trend**")
+                bar = alt.Chart(filtered_df).mark_bar().encode(
+                    x=alt.X('Chemical_Used', title=None),
+                    y=alt.Y('mean(Treatment_Outcome_Rating)', title='Avg Rating'),
+                    color=alt.Color('Chemical_Used', scale=alt.Scale(scheme='viridis'), legend=None),
+                    tooltip=['Chemical_Used', 'mean(Treatment_Outcome_Rating)']
+                ).properties(height=250, background='transparent')
+                st.altair_chart(bar, use_container_width=True)
+            with c2:
+                st.markdown("**Demographics**")
+                donut = alt.Chart(filtered_df).mark_arc(innerRadius=60).encode(
+                    theta='count()',
+                    color=alt.Color('Focus_Area', scale=alt.Scale(scheme='viridis'), legend=None),
+                    tooltip=['Focus_Area', 'count()']
+                ).properties(height=250, background='transparent')
+                st.altair_chart(donut, use_container_width=True)
+
+        # 5. DATA TABLES
+        st.markdown("### Patient Records")
+        st.dataframe(filtered_df[['Client_ID', 'Patient_Age', 'Chemical_Used', 'Dosage_Mg', 'Treatment_Outcome_Rating', 'Protocol_Description']], use_container_width=True, hide_index=True)
+
+        # Drill Down
+        st.markdown("### Patient Medical Card")
+        ids = filtered_df['Client_ID'].unique()
+        sel_id = st.selectbox("Select Client ID", ["Select..."] + list(ids))
+        if sel_id != "Select...":
+            rec = filtered_df[filtered_df['Client_ID'] == sel_id].iloc[0]
+            st.markdown(f"""
+            <div class="med-card">
+                <h3>📁 Client: {rec['Client_ID']}</h3>
+                <p><strong>Practitioner:</strong> {rec['Practitioner_Name']} | <strong>Date:</strong> {rec['Treatment_Date']}</p>
+                <hr style="border-color:#374151">
+                <p><strong>Protocol:</strong><br>{rec['Protocol_Description']}</p>
+                <p style="color:#4ade80"><strong>Results:</strong><br>{rec['Detailed_Results']}</p>
+                <p><strong>Next Steps:</strong> {rec['Next_Steps']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # PAGE: ADD RECORD
+    elif st.session_state.page == 'Add Record':
+        st.title("Add Clinical Record")
+        with st.form("add_rec"):
+            c1, c2 = st.columns(2)
+            practitioner = c1.text_input("Practitioner Name", value="Dr. A. Smith")
+            client_id = c2.text_input("Client ID (Anonymized)")
+            
+            c3, c4 = st.columns(2)
+            age = c3.number_input("Age", 18, 100, 30)
+            sex = c4.selectbox("Sex", SEX_OPTIONS)
+            
+            c5, c6 = st.columns(2)
+            focus = c5.selectbox("Focus Area", FOCUS_AREAS)
+            chem = c6.selectbox("Chemical", CHEMICALS)
+            
+            c7, c8 = st.columns(2)
+            dose = c7.number_input("Dosage (mg)", 0, 5000, 0)
+            intake = c8.selectbox("Intake", INTAKE_FORMS)
+            
+            prot = st.text_area("Protocol")
+            res = st.text_area("Results")
+            nxt = st.text_input("Next Steps")
+            out = st.slider("Outcome (1-5)", 1, 5, 3)
+            
+            if st.form_submit_button("Save Record", type="primary"):
+                rec = {
+                    "Practitioner_Name": practitioner, "Client_ID": client_id, "Treatment_Date": str(date.today()),
+                    "Patient_Age": age, "Patient_Sex": sex, "Focus_Area": focus, "Chemical_Used": chem,
+                    "Dosage_Mg": dose, "Intake_Form": intake, "Protocol_Description": prot,
+                    "Treatment_Outcome_Rating": out, "Detailed_Results": res, "Next_Steps": nxt
+                }
+                if append_record_to_csv(rec):
+                    st.success("Saved!")
+
+    # PAGE: MEMBERSHIP
+    elif st.session_state.page == 'Membership':
+        st.title("Upgrade your Practice")
+        st.markdown("Unlock the full potential of the PPN Network with our premium tiers.")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            <div class="pricing-card">
+                <h2 style="color:#60a5fa !important">The Guild</h2>
+                <p>Practitioner Tier</p>
+                <div class="price-tag">$49<span style="font-size:1rem; color:#9ca3af">/mo</span></div>
+                <div class="feature-list">
+                    ✅ Access to Global Analytics<br>
+                    ✅ Benchmark your Protocols<br>
+                    ✅ Peer Network Directory<br>
+                    ✅ Unlimited Searches
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.button("Subscribe (Individual)", use_container_width=True, type="primary")
+            
+        with col2:
+            st.markdown("""
+            <div class="pricing-card" style="border-color:#f59e0b">
+                <h2 style="color:#f59e0b !important">Clinic OS</h2>
+                <p>Enterprise Tier</p>
+                <div class="price-tag">$499<span style="font-size:1rem; color:#9ca3af">/mo</span></div>
+                <div class="feature-list">
+                    ✅ Multi-provider Dashboard<br>
+                    ✅ Export Raw Data (CSV/API)<br>
+                    ✅ White-label Patient Portal<br>
+                    ✅ Dedicated Success Manager
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.button("Contact Sales", use_container_width=True)
