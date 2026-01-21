@@ -293,11 +293,6 @@ if not st.session_state.logged_in:
 # --- VIEW B: LOGGED IN (App Features) ---
 else:
     
-    # Fix for Ghost State (Redirect if page no longer exists)
-    if st.session_state.page not in ['Dashboard', 'Add Record', 'Membership']:
-        st.session_state.page = 'Dashboard'
-        st.rerun()
-
     # PAGE: DASHBOARD (Default)
     if st.session_state.page == 'Dashboard':
         st.title("Clinical Research Dashboard")
@@ -322,7 +317,7 @@ else:
                 st.session_state.search_query = q
                 st.rerun()
 
-        # Advanced Search Placeholder REMOVED here
+        # REMOVED: Advanced Search Placeholder as requested
 
         filtered_df = parse_smart_query(st.session_state.search_query, active_df)
 
