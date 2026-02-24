@@ -1,4 +1,4 @@
-# 🧠 Psychedelic Practitioners Network (PPN) - Research Portal
+# 🧠 Psychedelic Practitioners Network - PPN Portal
 
 ## Overview
 [cite_start]The **PPN Research Portal** is a secure, searchable knowledge repository designed for verified clinicians to research historical treatment protocols for psychedelic therapies[cite: 3, 5]. [cite_start]It allows practitioners to query anonymous patient outcomes, analyze efficacy trends, and contribute new data to the community[cite: 7].
